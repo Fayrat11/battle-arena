@@ -1,1 +1,24 @@
-.
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Battle Arena</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="hud">
+    <div>HP: <span id="hp">100</span></div>
+    <div>Kills: <span id="kills">0</span></div>
+  </div>
+
+  <div class="banner" id="banner" hidden>
+    <div class="banner__title" id="bannerTitle">Победа!</div>
+    <button class="btn" id="restart">Заново</button>
+  </div>
+
+  <canvas id="c"></canvas>
+
+  <script src="game.js"></script>
+</body>
+</html>
