@@ -4,31 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Battle Arena</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <div class="hud">
     <div class="hud__row">
       <div>HP: <span id="hp">100</span></div>
-      <div>Kills: <span id="kills">0</span>/15</div>
+      <div>Kills: <span id="kills">0</span>/<span id="goal">15</span></div>
     </div>
-    <div class="hud__row small">
+    <div class="hud__row hud__hint">
       <div>Move: левый джойстик</div>
       <div>Shoot: правый джойстик</div>
     </div>
   </div>
 
-  <div class="banner" id="banner" hidden>
+  <div class="overlay" id="overlay" hidden>
     <div class="card">
-      <div class="title" id="bannerTitle">Победа!</div>
-      <div class="subtitle" id="bannerSub">Ещё раз?</div>
-      <button class="btn" id="restart">Заново</button>
+      <div class="card__title" id="resultTitle">Победа!</div>
+      <div class="card__sub" id="resultSub">Ещё раз?</div>
+      <button class="btn" id="restartBtn">Заново</button>
     </div>
   </div>
 
-  <canvas id="c"></canvas>
+  <canvas id="game"></canvas>
 
-  <!-- виртуальные джойстики -->
   <div class="stick stick--left" id="stickL" aria-hidden="true">
     <div class="stick__base"></div>
     <div class="stick__knob" id="knobL"></div>
@@ -39,6 +38,6 @@
     <div class="stick__knob" id="knobR"></div>
   </div>
 
-  <script src="game.js"></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
