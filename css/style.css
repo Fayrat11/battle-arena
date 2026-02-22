@@ -1,1 +1,145 @@
- 
+/* ===== БАЗА ===== */
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #0b0f16;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+}
+
+/* ===== HUD ===== */
+.hud {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  z-index: 20;
+  color: #fff;
+  background: rgba(0,0,0,0.28);
+  padding: 12px 14px;
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+  min-width: 240px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.hud__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 15px;
+}
+
+.hud__hint {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+/* ===== OVERLAY ===== */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.55);
+}
+
+.card {
+  width: min(400px, 90vw);
+  background: rgba(16, 20, 32, 0.95);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px;
+  padding: 22px;
+  text-align: center;
+  box-shadow: 0 14px 50px rgba(0,0,0,0.45);
+}
+
+.card__title {
+  font-size: 34px;
+  margin: 6px 0 10px;
+}
+
+.card__sub {
+  font-size: 15px;
+  opacity: 0.85;
+  margin-bottom: 16px;
+}
+
+.btn {
+  width: 100%;
+  border: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  font-size: 16px;
+  background: linear-gradient(135deg, #2b6cff, #5f8cff);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 6px 20px rgba(43,108,255,0.35);
+}
+
+/* ===== ДЖОЙСТИКИ ===== */
+.stick {
+  position: fixed;
+  bottom: 20px;
+  width: 160px;
+  height: 160px;
+  z-index: 30;
+  pointer-events: none; /* события идут через canvas */
+}
+
+.stick--left { left: 20px; }
+.stick--right { right: 20px; }
+
+.stick__base {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(255,255,255,0.10),
+    rgba(255,255,255,0.04)
+  );
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: inset 0 0 25px rgba(255,255,255,0.06);
+}
+
+.stick__knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle at 40% 35%,
+    rgba(255,255,255,0.25),
+    rgba(255,255,255,0.10)
+  );
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow:
+    0 6px 18px rgba(0,0,0,0.35),
+    inset 0 0 18px rgba(255,255,255,0.08);
+}
+
+/* адаптация под маленькие экраны */
+@media (max-width: 480px) {
+  .stick {
+    width: 140px;
+    height: 140px;
+  }
+  .stick__knob {
+    width: 60px;
+    height: 60px;
+  }
+}
