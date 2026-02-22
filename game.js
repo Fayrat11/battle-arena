@@ -5,7 +5,13 @@ const hpEl = document.getElementById("hp");
 const killsEl = document.getElementById("kills");
 const banner = document.getElementById("banner");
 const bannerTitle = document.getElementById("bannerTitle");
+const bannerSub = document.getElementById("bannerSub");
 const restartBtn = document.getElementById("restart");
+
+const stickL = document.getElementById("stickL");
+const stickR = document.getElementById("stickR");
+const knobL = document.getElementById("knobL");
+const knobR = document.getElementById("knobR");
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -16,250 +22,497 @@ resize();
 
 function rand(min, max) { return min + Math.random() * (max - min); }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function hypot(x, y) { return Math.hypot(x, y); }
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
-const world = {
-  w: 2000,
-  h: 2000
+function normalize(x, y) {
+  const d = Math.hypot(x, y) || 1;
+  return { x: x / d, y: y / d, d };
+}
+
+const CONFIG = {
+  worldW: 1800,
+  worldH: 1200,
+  killsToWin: 15,
+
+  player: {
+    r: 22,
+    hp: 100,
+    speed: 5.2,
+    fireRate: 10,     // кадры между выстрелами
+    bulletSpeed: 12,
+    bulletLife: 80,
+    bulletDmg: 10
+  },
+
+  enemy: {
+    r: 18,
+    hp: 35,
+    speed: 2.2,
+    fireRate: 35,
+    bulletSpeed: 8.6,
+    bulletLife: 95,
+    bulletDmg: 9,
+    sight: 520
+  },
+
+  obstacles: {
+    count: 10
+  }
 };
 
-let state;
+let state = null;
 
-function reset() {
-  state = {
-    time: 0,
-    kills: 0,
-    player: {
-      x: world.w/2,
-      y: world.h/2,
-      r: 22,
-      hp: 100,
-      speed: 6,
-      targetX: world.w/2,
-      targetY: world.h/2,
-      fireCd: 0
-    },
-    bullets: [],
-    enemies: [],
-    over: false
-  };
-
-  // спавним ботов
-  for (let i = 0; i < 10; i++) spawnEnemy();
-
-  banner.hidden = true;
-  hpEl.textContent = state.player.hp;
-  killsEl.textContent = state.kills;
+// ===== Камера =====
+function getCamera() {
+  const p = state.player;
+  let cx = p.x - canvas.width / 2;
+  let cy = p.y - canvas.height / 2;
+  cx = clamp(cx, 0, CONFIG.worldW - canvas.width);
+  cy = clamp(cy, 0, CONFIG.worldH - canvas.height);
+  return { x: cx, y: cy };
 }
 
-function spawnEnemy() {
-  const e = {
-    x: rand(100, world.w - 100),
-    y: rand(100, world.h - 100),
-    r: 18,
-    hp: 30,
-    speed: rand(1.8, 2.6),
-    touchDmg: 12,
-    touchCd: 0
-  };
-  // не слишком близко к игроку
-  if (dist(e, state.player) < 250) {
-    e.x = rand(100, world.w - 100);
-    e.y = rand(100, world.h - 100);
-  }
-  state.enemies.push(e);
+function worldToScreen(wx, wy) {
+  const cam = getCamera();
+  return { x: wx - cam.x, y: wy - cam.y };
 }
-
-function nearestEnemy(p) {
-  let best = null;
-  let bestD = Infinity;
-  for (const e of state.enemies) {
-    const d = dist(p, e);
-    if (d < bestD) { bestD = d; best = e; }
-  }
-  return best;
-}
-
-// управление касанием: игрок бежит к точке
-canvas.addEventListener("pointerdown", (ev) => {
-  const {x, y} = screenToWorld(ev.clientX, ev.clientY);
-  state.player.targetX = x;
-  state.player.targetY = y;
-});
-canvas.addEventListener("pointermove", (ev) => {
-  if (ev.buttons === 1) {
-    const {x, y} = screenToWorld(ev.clientX, ev.clientY);
-    state.player.targetX = x;
-    state.player.targetY = y;
-  }
-});
-canvas.addEventListener("pointerup", () => {});
-
-restartBtn.addEventListener("click", reset);
 
 function screenToWorld(sx, sy) {
   const cam = getCamera();
   return { x: sx + cam.x, y: sy + cam.y };
 }
 
-function getCamera() {
-  // камера следует за игроком
-  const p = state.player;
-  let camX = p.x - canvas.width/2;
-  let camY = p.y - canvas.height/2;
-  camX = clamp(camX, 0, world.w - canvas.width);
-  camY = clamp(camY, 0, world.h - canvas.height);
-  return { x: camX, y: camY };
+// ===== Джойстики =====
+const sticks = {
+  left:  { active: false, id: null, baseX: 0, baseY: 0, dx: 0, dy: 0, max: 52 },
+  right: { active: false, id: null, baseX: 0, baseY: 0, dx: 0, dy: 0, max: 52 },
+};
+
+function setKnob(knobEl, dx, dy) {
+  knobEl.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+}
+function resetStick(side) {
+  const s = sticks[side];
+  s.active = false;
+  s.id = null;
+  s.dx = 0;
+  s.dy = 0;
+  if (side === "left") setKnob(knobL, 0, 0);
+  if (side === "right") setKnob(knobR, 0, 0);
+}
+function updateStick(side, clientX, clientY) {
+  const s = sticks[side];
+  const dx = clientX - s.baseX;
+  const dy = clientY - s.baseY;
+  const n = normalize(dx, dy);
+  const mag = Math.min(s.max, n.d);
+  s.dx = n.x * mag;
+  s.dy = n.y * mag;
+  if (side === "left") setKnob(knobL, s.dx, s.dy);
+  if (side === "right") setKnob(knobR, s.dx, s.dy);
 }
 
-function fireAt(p, e) {
-  const dx = e.x - p.x;
-  const dy = e.y - p.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const vx = (dx / len) * 10;
-  const vy = (dy / len) * 10;
+function isLeftHalf(x) { return x < window.innerWidth / 2; }
+
+canvas.addEventListener("pointerdown", (e) => {
+  // важно: чтобы iOS не выделял/не скроллил
+  canvas.setPointerCapture?.(e.pointerId);
+
+  if (isLeftHalf(e.clientX)) {
+    const s = sticks.left;
+    if (!s.active) {
+      s.active = true;
+      s.id = e.pointerId;
+      // базу берём по центру левого джойстика на экране (визуально всегда на месте)
+      const rect = stickL.getBoundingClientRect();
+      s.baseX = rect.left + rect.width / 2;
+      s.baseY = rect.top + rect.height / 2;
+      updateStick("left", e.clientX, e.clientY);
+    }
+  } else {
+    const s = sticks.right;
+    if (!s.active) {
+      s.active = true;
+      s.id = e.pointerId;
+      const rect = stickR.getBoundingClientRect();
+      s.baseX = rect.left + rect.width / 2;
+      s.baseY = rect.top + rect.height / 2;
+      updateStick("right", e.clientX, e.clientY);
+    }
+  }
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (sticks.left.active && sticks.left.id === e.pointerId) {
+    updateStick("left", e.clientX, e.clientY);
+  }
+  if (sticks.right.active && sticks.right.id === e.pointerId) {
+    updateStick("right", e.clientX, e.clientY);
+  }
+});
+
+function endPointer(e) {
+  if (sticks.left.active && sticks.left.id === e.pointerId) resetStick("left");
+  if (sticks.right.active && sticks.right.id === e.pointerId) resetStick("right");
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+
+// ===== Коллизии: круг и прямоугольник =====
+function circleRectResolve(c, r) {
+  // r: {x,y,w,h} - axis aligned
+  const closestX = clamp(c.x, r.x, r.x + r.w);
+  const closestY = clamp(c.y, r.y, r.y + r.h);
+  const dx = c.x - closestX;
+  const dy = c.y - closestY;
+  const d = Math.hypot(dx, dy);
+  if (d < c.r) {
+    const n = normalize(dx, dy);
+    const push = (c.r - d) + 0.01;
+    c.x += n.x * push;
+    c.y += n.y * push;
+    return true;
+  }
+  return false;
+}
+
+function circleRectHitPoint(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+function bulletHitsRect(b, r) {
+  // быстрая проверка: точка внутри прямоугольника (пуля маленькая)
+  return circleRectHitPoint(b.x, b.y, r);
+}
+
+// ===== Игровые сущности =====
+function makePlayer() {
+  return {
+    x: CONFIG.worldW / 2,
+    y: CONFIG.worldH / 2,
+    r: CONFIG.player.r,
+    hp: CONFIG.player.hp,
+    fireCd: 0,
+    facingX: 1,
+    facingY: 0
+  };
+}
+
+function spawnEnemy() {
+  // спавним в стороне от игрока
+  let x, y;
+  for (let i = 0; i < 30; i++) {
+    x = rand(80, CONFIG.worldW - 80);
+    y = rand(80, CONFIG.worldH - 80);
+    if (dist({ x, y }, state.player) > 320) break;
+  }
+  state.enemies.push({
+    x, y,
+    r: CONFIG.enemy.r,
+    hp: CONFIG.enemy.hp,
+    fireCd: rand(0, CONFIG.enemy.fireRate),
+    vx: 0,
+    vy: 0
+  });
+}
+
+function spawnObstacles() {
+  const obs = [];
+  for (let i = 0; i < CONFIG.obstacles.count; i++) {
+    const w = rand(90, 180);
+    const h = rand(70, 160);
+    const x = rand(60, CONFIG.worldW - w - 60);
+    const y = rand(60, CONFIG.worldH - h - 60);
+    obs.push({ x, y, w, h });
+  }
+  return obs;
+}
+
+function fireBullet(fromX, fromY, dirX, dirY, isPlayer) {
+  const n = normalize(dirX, dirY);
+  const speed = isPlayer ? CONFIG.player.bulletSpeed : CONFIG.enemy.bulletSpeed;
 
   state.bullets.push({
-    x: p.x,
-    y: p.y,
-    r: 6,
-    vx, vy,
-    life: 90, // кадров
-    dmg: 10
+    x: fromX,
+    y: fromY,
+    r: isPlayer ? 5 : 5,
+    vx: n.x * speed,
+    vy: n.y * speed,
+    life: isPlayer ? CONFIG.player.bulletLife : CONFIG.enemy.bulletLife,
+    dmg: isPlayer ? CONFIG.player.bulletDmg : CONFIG.enemy.bulletDmg,
+    fromPlayer: isPlayer
   });
+}
+
+// ===== Логика игры =====
+function reset() {
+  state = {
+    time: 0,
+    kills: 0,
+    over: false,
+    player: makePlayer(),
+    enemies: [],
+    bullets: [],
+    obstacles: spawnObstacles()
+  };
+
+  // спавн врагов
+  for (let i = 0; i < 8; i++) spawnEnemy();
+
+  banner.hidden = true;
+  hpEl.textContent = state.player.hp;
+  killsEl.textContent = state.kills;
+  resetStick("left");
+  resetStick("right");
 }
 
 function endGame(win) {
   state.over = true;
   bannerTitle.textContent = win ? "Победа!" : "Поражение";
+  bannerSub.textContent = win ? "Ты зачистил арену." : "Попробуй ещё раз.";
   banner.hidden = false;
 }
 
-function update() {
-  if (state.over) return;
+restartBtn.addEventListener("click", reset);
 
-  state.time++;
-
+function updatePlayer() {
   const p = state.player;
 
-  // движение к цели
-  const dx = p.targetX - p.x;
-  const dy = p.targetY - p.y;
-  const d = Math.hypot(dx, dy);
-  if (d > 2) {
-    const vx = (dx / d) * p.speed;
-    const vy = (dy / d) * p.speed;
-    p.x = clamp(p.x + vx, p.r, world.w - p.r);
-    p.y = clamp(p.y + vy, p.r, world.h - p.r);
+  // движение от левого джойстика
+  const mx = sticks.left.dx / sticks.left.max; // -1..1
+  const my = sticks.left.dy / sticks.left.max; // -1..1
+
+  const move = normalize(mx, my);
+  const moving = Math.abs(mx) > 0.05 || Math.abs(my) > 0.05;
+
+  if (moving) {
+    p.x += move.x * CONFIG.player.speed;
+    p.y += move.y * CONFIG.player.speed;
+    p.facingX = move.x;
+    p.facingY = move.y;
   }
 
-  // авто-стрельба
+  // границы мира
+  p.x = clamp(p.x, p.r, CONFIG.worldW - p.r);
+  p.y = clamp(p.y, p.r, CONFIG.worldH - p.r);
+
+  // коллизии с препятствиями
+  for (const r of state.obstacles) circleRectResolve(p, r);
+
+  // стрельба от правого джойстика
   p.fireCd = Math.max(0, p.fireCd - 1);
-  const target = nearestEnemy(p);
-  if (target && dist(p, target) < 520 && p.fireCd === 0) {
-    fireAt(p, target);
-    p.fireCd = 12; // скорострельность
-  }
+  const ax = sticks.right.dx / sticks.right.max;
+  const ay = sticks.right.dy / sticks.right.max;
+  const aiming = Math.abs(ax) > 0.12 || Math.abs(ay) > 0.12;
 
-  // пули
-  for (const b of state.bullets) {
-    b.x += b.vx;
-    b.y += b.vy;
-    b.life--;
+  if (aiming) {
+    // направление выстрела = направление правого джойстика
+    p.facingX = ax;
+    p.facingY = ay;
+    if (p.fireCd === 0) {
+      fireBullet(p.x, p.y, ax, ay, true);
+      p.fireCd = CONFIG.player.fireRate;
+    }
   }
-  state.bullets = state.bullets.filter(b =>
-    b.life > 0 && b.x > -50 && b.y > -50 && b.x < world.w+50 && b.y < world.h+50
-  );
+}
 
-  // враги идут к игроку
+function enemyLineOfSight(e, p) {
+  // простая проверка: если препятствие перекрывает "линию" — не стреляем
+  // (упрощение) — проверяем несколько точек по сегменту
+  const dx = p.x - e.x;
+  const dy = p.y - e.y;
+  const d = Math.hypot(dx, dy);
+  if (d > CONFIG.enemy.sight) return false;
+
+  const steps = 6;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / (steps + 1);
+    const sx = e.x + dx * t;
+    const sy = e.y + dy * t;
+    for (const r of state.obstacles) {
+      if (circleRectHitPoint(sx, sy, r)) return false;
+    }
+  }
+  return true;
+}
+
+function updateEnemies() {
+  const p = state.player;
+
   for (const e of state.enemies) {
-    const ex = p.x - e.x;
-    const ey = p.y - e.y;
-    const ed = Math.hypot(ex, ey) || 1;
-    e.x += (ex/ed) * e.speed;
-    e.y += (ey/ed) * e.speed;
+    // движение к игроку, но если близко — чуть кружим
+    const dx = p.x - e.x;
+    const dy = p.y - e.y;
+    const n = normalize(dx, dy);
+    const d = n.d;
 
-    e.touchCd = Math.max(0, e.touchCd - 1);
+    let tx = n.x;
+    let ty = n.y;
 
-    // урон при касании
-    if (dist(e, p) < e.r + p.r && e.touchCd === 0) {
-      p.hp -= e.touchDmg;
-      e.touchCd = 25;
-      hpEl.textContent = Math.max(0, p.hp);
+    if (d < 180) {
+      // "обход" — перпендикуляр
+      const perp = (state.time % 120 < 60) ? 1 : -1;
+      tx = -n.y * perp * 0.8 + n.x * 0.2;
+      ty =  n.x * perp * 0.8 + n.y * 0.2;
+    }
+
+    const nn = normalize(tx, ty);
+    e.x += nn.x * CONFIG.enemy.speed;
+    e.y += nn.y * CONFIG.enemy.speed;
+
+    // границы + коллизии с препятствиями
+    e.x = clamp(e.x, e.r, CONFIG.worldW - e.r);
+    e.y = clamp(e.y, e.r, CONFIG.worldH - e.r);
+
+    for (const r of state.obstacles) circleRectResolve(e, r);
+
+    // стрельба по игроку если видит
+    e.fireCd = Math.max(0, e.fireCd - 1);
+    if (e.fireCd === 0 && enemyLineOfSight(e, p)) {
+      fireBullet(e.x, e.y, p.x - e.x, p.y - e.y, false);
+      e.fireCd = CONFIG.enemy.fireRate;
+    }
+
+    // контактный урон (лёгкий)
+    if (dist(e, p) < e.r + p.r) {
+      p.hp -= 0.25; // постепенно
       if (p.hp <= 0) {
+        p.hp = 0;
+        hpEl.textContent = 0;
         endGame(false);
         return;
       }
     }
   }
 
-  // столкновения пуль с врагами
+  hpEl.textContent = Math.floor(state.player.hp);
+}
+
+function updateBullets() {
+  const p = state.player;
+
   for (const b of state.bullets) {
-    for (const e of state.enemies) {
-      if (dist(b, e) < b.r + e.r) {
-        e.hp -= b.dmg;
+    b.x += b.vx;
+    b.y += b.vy;
+    b.life--;
+
+    // препятствия — пули исчезают
+    for (const r of state.obstacles) {
+      if (bulletHitsRect(b, r)) {
         b.life = 0;
         break;
       }
     }
+
+    // попадание
+    if (b.life <= 0) continue;
+
+    if (b.fromPlayer) {
+      for (const e of state.enemies) {
+        if (dist(b, e) < b.r + e.r) {
+          e.hp -= b.dmg;
+          b.life = 0;
+          break;
+        }
+      }
+    } else {
+      if (dist(b, p) < b.r + p.r) {
+        p.hp -= b.dmg;
+        hpEl.textContent = Math.max(0, Math.floor(p.hp));
+        b.life = 0;
+        if (p.hp <= 0) {
+          p.hp = 0;
+          endGame(false);
+          return;
+        }
+      }
+    }
   }
 
-  // убрать мёртвых врагов
+  state.bullets = state.bullets.filter(b =>
+    b.life > 0 &&
+    b.x > -80 && b.y > -80 && b.x < CONFIG.worldW + 80 && b.y < CONFIG.worldH + 80
+  );
+
+  // убрать мёртвых врагов + киллы
   const before = state.enemies.length;
   state.enemies = state.enemies.filter(e => e.hp > 0);
   const died = before - state.enemies.length;
+
   if (died > 0) {
     state.kills += died;
     killsEl.textContent = state.kills;
-    // спавним новых, чтобы было движение
-    for (let i = 0; i < died; i++) spawnEnemy();
-  }
 
-  // условие победы: 20 киллов
-  if (state.kills >= 20) {
-    endGame(true);
-    return;
+    // спавним новых, чтобы матч продолжался (как в арене)
+    for (let i = 0; i < died; i++) spawnEnemy();
+
+    if (state.kills >= CONFIG.killsToWin) {
+      endGame(true);
+      return;
+    }
   }
 }
 
-function draw() {
-  const cam = getCamera();
+function update() {
+  if (!state || state.over) return;
+  state.time++;
+  updatePlayer();
+  updateEnemies();
+  updateBullets();
+}
 
-  // фон
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#0f1115";
+// ===== Рендер =====
+function drawBackground(cam) {
+  // темный фон + сетка
+  ctx.fillStyle = "#0b0f16";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // сетка
   ctx.save();
   ctx.translate(-cam.x, -cam.y);
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
   ctx.lineWidth = 1;
-  for (let x = 0; x <= world.w; x += 80) {
+
+  const step = 80;
+  for (let x = 0; x <= CONFIG.worldW; x += step) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x, world.h);
+    ctx.lineTo(x, CONFIG.worldH);
     ctx.stroke();
   }
-  for (let y = 0; y <= world.h; y += 80) {
+  for (let y = 0; y <= CONFIG.worldH; y += step) {
     ctx.beginPath();
     ctx.moveTo(0, y);
-    ctx.lineTo(world.w, y);
+    ctx.lineTo(CONFIG.worldW, y);
     ctx.stroke();
   }
+  ctx.restore();
+}
 
-  // цель движения
-  const p = state.player;
-  ctx.beginPath();
-  ctx.strokeStyle = "rgba(0,200,255,0.35)";
-  ctx.arc(p.targetX, p.targetY, 16, 0, Math.PI*2);
-  ctx.stroke();
+function drawObstacles(cam) {
+  ctx.save();
+  ctx.translate(-cam.x, -cam.y);
+
+  for (const r of state.obstacles) {
+    // "блоки" как укрытия
+    ctx.fillStyle = "#1b2334";
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  }
+
+  ctx.restore();
+}
+
+function drawEntities(cam) {
+  ctx.save();
+  ctx.translate(-cam.x, -cam.y);
 
   // пули
   for (const b of state.bullets) {
     ctx.beginPath();
-    ctx.fillStyle = "#ffd54a";
-    ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+    ctx.fillStyle = b.fromPlayer ? "#ffd54a" : "#ff7aa2";
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -267,32 +520,39 @@ function draw() {
   for (const e of state.enemies) {
     ctx.beginPath();
     ctx.fillStyle = "#ff4d6d";
-    ctx.arc(e.x, e.y, e.r, 0, Math.PI*2);
+    ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
     ctx.fill();
 
     // hp bar
+    const w = 40, h = 6;
     ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect(e.x - 18, e.y - 28, 36, 6);
+    ctx.fillRect(e.x - w/2, e.y - e.r - 14, w, h);
     ctx.fillStyle = "#7CFF6B";
-    ctx.fillRect(e.x - 18, e.y - 28, 36 * (e.hp/30), 6);
+    ctx.fillRect(e.x - w/2, e.y - e.r - 14, w * (e.hp / CONFIG.enemy.hp), h);
   }
 
   // игрок
+  const p = state.player;
   ctx.beginPath();
   ctx.fillStyle = "#3b82f6";
-  ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+  ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
   ctx.fill();
 
-  // прицел на ближайшего
-  const t = nearestEnemy(p);
-  if (t && dist(p, t) < 520) {
-    ctx.beginPath();
-    ctx.strokeStyle = "rgba(255,255,255,0.35)";
-    ctx.arc(t.x, t.y, t.r + 10, 0, Math.PI*2);
-    ctx.stroke();
-  }
+  // направление (маленькая точка-нос)
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.arc(p.x + p.facingX * (p.r - 6), p.y + p.facingY * (p.r - 6), 3.5, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
+}
+
+function draw() {
+  if (!state) return;
+  const cam = getCamera();
+  drawBackground(cam);
+  drawObstacles(cam);
+  drawEntities(cam);
 }
 
 function loop() {
@@ -301,5 +561,6 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+// старт
 reset();
 loop();
